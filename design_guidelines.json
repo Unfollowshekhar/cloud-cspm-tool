@@ -1,0 +1,95 @@
+{
+  "theme": "dark",
+  "archetype": "Archetype 4 (Swiss & High-Contrast) + Tactical Variant",
+  "typography": {
+    "heading_font": "Chivo",
+    "body_font": "IBM Plex Sans",
+    "mono_font": "JetBrains Mono",
+    "scales": {
+      "h1": "text-4xl sm:text-5xl tracking-tight font-black",
+      "h2": "text-2xl sm:text-3xl tracking-tight font-bold",
+      "h3": "text-xl font-bold",
+      "h4": "text-lg font-semibold",
+      "body": "text-base leading-relaxed",
+      "data": "text-sm font-mono tracking-tight",
+      "overline": "text-xs font-mono uppercase tracking-[0.2em]"
+    }
+  },
+  "colors": {
+    "background": "#050505",
+    "surface": "#0A0A0A",
+    "surface_hover": "#141414",
+    "border": "#222222",
+    "border_focus": "#444444",
+    "text_primary": "#FFFFFF",
+    "text_secondary": "#A1A1AA",
+    "text_muted": "#71717A",
+    "primary": "#F3F4F6",
+    "primary_hover": "#FFFFFF",
+    "primary_foreground": "#000000",
+    "accent": "#007AFF",
+    "severity": {
+      "critical": "#FF3B30",
+      "high": "#FF9500",
+      "medium": "#FFCC00",
+      "low": "#34C759",
+      "info": "#007AFF"
+    }
+  },
+  "spacing_and_layout": {
+    "strategy": "The Control Room Grid",
+    "container_padding": "p-6 sm:p-8",
+    "gap": "gap-4 sm:gap-6",
+    "radius": "rounded-none sm:rounded-sm",
+    "border_width": "border",
+    "shadows": "shadow-none"
+  },
+  "components": {
+    "card": {
+      "base": "bg-[#0A0A0A] border border-[#222222] rounded-sm p-6 flex flex-col h-full",
+      "hover": "hover:border-[#444444] transition-colors duration-200"
+    },
+    "button": {
+      "primary": "bg-white text-black font-semibold rounded-sm px-6 py-2 hover:bg-gray-200 transition-colors",
+      "secondary": "bg-transparent border border-[#222222] text-white rounded-sm px-6 py-2 hover:bg-[#141414] transition-colors",
+      "danger": "bg-[#FF3B30]/10 text-[#FF3B30] border border-[#FF3B30]/20 rounded-sm px-6 py-2 hover:bg-[#FF3B30]/20 transition-colors"
+    },
+    "badge": {
+      "critical": "bg-[#FF3B30]/10 text-[#FF3B30] border border-[#FF3B30]/20 font-mono text-xs px-2 py-0.5 uppercase tracking-wider",
+      "high": "bg-[#FF9500]/10 text-[#FF9500] border border-[#FF9500]/20 font-mono text-xs px-2 py-0.5 uppercase tracking-wider",
+      "medium": "bg-[#FFCC00]/10 text-[#FFCC00] border border-[#FFCC00]/20 font-mono text-xs px-2 py-0.5 uppercase tracking-wider",
+      "low": "bg-[#34C759]/10 text-[#34C759] border border-[#34C759]/20 font-mono text-xs px-2 py-0.5 uppercase tracking-wider"
+    },
+    "table": {
+      "wrapper": "w-full border-collapse text-left text-sm",
+      "header": "border-b border-[#222222] text-[#A1A1AA] font-mono text-xs uppercase tracking-wider py-3",
+      "row": "border-b border-[#222222]/50 hover:bg-[#141414] transition-colors cursor-pointer",
+      "cell": "py-4 align-top"
+    }
+  },
+  "media": {
+    "images": [
+      {
+        "category": "scan_progress_background",
+        "url": "https://images.unsplash.com/photo-1762163516269-3c143e04175c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NjZ8MHwxfHNlYXJjaHwxfHxzZXJ2ZXIlMjByYWNrJTIwZGFya3xlbnwwfHx8fDE3NzQ5NDU1NDd8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Dark server rack background to be used with a heavy black overlay (e.g., bg-black/80) on the 'Run Scan' page during scanning."
+      }
+    ],
+    "icons": "Phosphor Icons (@phosphor-icons/react)"
+  },
+  "instructions_to_main_agent": [
+    "Install and use Phosphor Icons: yarn add @phosphor-icons/react",
+    "Install and use Recharts for data visualizations: yarn add recharts. Ensure charts use the defined severity colors for data segments and have a transparent background with #222222 grid lines.",
+    "Implement 'The Control Room Grid' layout pattern. Ensure the layout utilizes the full width and height where appropriate, keeping a dense, data-rich feel without empty gaps.",
+    "Borders are critical. Do not use shadows for elevation. Use 1px #222222 borders to define sections and cards.",
+    "For the Findings Table, implement an expandable row mechanism. Include data-testid attributes on all interactive elements (e.g., data-testid='expand-row-button', data-testid='start-scan-button').",
+    "For the Run Scan page, when the scan is active, use the 'scan_progress_background' image with a heavy backdrop blur and bg-black/80 overlay to create an immersive focus state.",
+    "Text contrast is paramount. Only use the defined severity colors on text or borders; do not use them as solid background fills to maintain a professional, un-gamified look.",
+    "Use custom scrollbars to remove gutters: Webkit scrollbar styling with dark tracks and slightly lighter thumbs."
+  ],
+  "accessibility_and_motion": {
+    "hover_states": "All buttons and table rows must explicitly define hover colors. E.g., hover:bg-[#141414].",
+    "focus_states": "Focus states must use ring-1 ring-white/50 ring-offset-2 ring-offset-black.",
+    "motion": "Use minimal motion. Stick to fast opacity transitions (duration-150) for hover states, and smooth ease-in-out for progress bars. No bouncy animations."
+  }
+}
