@@ -24,6 +24,9 @@ from threat_map.routes import router as threat_router, set_db as threat_set_db
 from reporting.routes import router as report_router, set_scan_store as report_set_store
 from notifications.routes import router as notif_router, set_db as notif_set_db, create_scan_notifications
 from remediation.routes import router as remed_router, set_db as remed_set_db
+from scheduler.routes import router as sched_router
+from scheduler.scheduler import scan_scheduler
+from notifications.notifier import email_notifier
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -62,6 +65,16 @@ class ScanProgress(BaseModel):
 @api_router.get("/")
 async def root():
     return {"message": "CSPM Tool API - Cloud Security Posture Management"}
+
+
+@api_router.get("/posture/trend")
+async def get_posture_trend():
+    """Public endpoint for login page posture widget - no auth required."""
+    history = await db.scan_history.find(
+        {}, {"_id": 0, "avg_risk_score": 1, "total_findings": 1, "findings_by_severity": 1, "timestamp": 1}
+    ).sort("timestamp", -1).to_list(10)
+    history.reverse()
+    return {"trend": history, "total_scans": await db.scan_history.count_documents({})}
 
 
 @api_router.get("/regions")
@@ -152,6 +165,9 @@ async def run_scan(request: ScanRequest, user: dict = Depends(require_role("anal
         # Create notifications
         await create_scan_notifications(db, result)
 
+        # Send email alerts
+        await email_notifier.send_scan_alerts(result, db)
+
         return result.model_dump()
 
     except Exception as e:
@@ -215,6 +231,7 @@ app.include_router(threat_router)
 app.include_router(report_router)
 app.include_router(notif_router)
 app.include_router(remed_router)
+app.include_router(sched_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -240,6 +257,7 @@ async def startup():
     await db.scan_history.create_index("timestamp")
     await db.notifications.create_index("created_at")
     await db.remediation_tracking.create_index("finding_id", unique=True)
+    await db.scheduler_config.create_index("type", unique=True)
 
     # Seed users if empty
     count = await db.users.count_documents({})
@@ -254,7 +272,57 @@ async def startup():
         await db.users.insert_many(users)
         logger.info("Seeded 3 default users: admin, analyst, viewer")
 
+    # Setup and start scheduler
+    async def scheduled_scan_fn(region: str, scanned_by: str = "scheduler"):
+        """Shared scan logic for scheduler."""
+        if scan_store["scanning"]:
+            return
+        scan_store["scanning"] = True
+        try:
+            start_time = time.time()
+            rules = load_rules()
+            findings = generate_demo_findings(region=region)
+            WeightedRiskScorer.score_findings(findings, rules)
+            elapsed = round(time.time() - start_time, 2)
+
+            severity_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
+            service_counts = {}
+            for f in findings:
+                severity_counts[f.severity] = severity_counts.get(f.severity, 0) + 1
+                service_counts[f.service] = service_counts.get(f.service, 0) + 1
+            avg_risk = round(sum(f.risk_score for f in findings) / len(findings), 1) if findings else 0
+
+            result = ScanResult(
+                findings=findings, scan_time=elapsed, account_id=DEMO_ACCOUNT_ID,
+                region=region, total_findings=len(findings),
+                findings_by_severity=severity_counts, findings_by_service=service_counts,
+                demo_mode=True,
+            )
+            scan_store["latest"] = result
+
+            history_doc = {
+                "scan_id": result.scan_id, "scan_time": result.scan_time,
+                "account_id": result.account_id, "region": result.region,
+                "total_findings": result.total_findings,
+                "findings_by_severity": result.findings_by_severity,
+                "findings_by_service": result.findings_by_service,
+                "avg_risk_score": avg_risk, "timestamp": result.timestamp,
+                "demo_mode": result.demo_mode, "scanned_by": scanned_by,
+            }
+            await db.scan_history.insert_one(history_doc)
+            await create_scan_notifications(db, result)
+            await email_notifier.send_scan_alerts(result, db)
+            logger.info(f"Scheduled scan complete: {len(findings)} findings")
+        except Exception as e:
+            logger.error(f"Scheduled scan failed: {e}")
+        finally:
+            scan_store["scanning"] = False
+
+    scan_scheduler.set_dependencies(db, scheduled_scan_fn)
+    await scan_scheduler.start()
+
 
 @app.on_event("shutdown")
 async def shutdown():
+    scan_scheduler.stop()
     client.close()

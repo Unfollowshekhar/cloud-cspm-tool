@@ -12,11 +12,16 @@ class CSPMAPITester:
         self.tests_run = 0
         self.tests_passed = 0
         self.scan_results = None
+        self.tokens = {}  # Store tokens for different users
 
-    def run_test(self, name, method, endpoint, expected_status=200, data=None, validate_func=None):
+    def run_test(self, name, method, endpoint, expected_status=200, data=None, validate_func=None, token=None):
         """Run a single API test"""
         url = f"{self.api_url}/{endpoint}" if endpoint else f"{self.api_url}/"
         headers = {'Content-Type': 'application/json'}
+        
+        # Add authorization header if token provided
+        if token:
+            headers['Authorization'] = f'Bearer {token}'
 
         self.tests_run += 1
         print(f"\n🔍 Testing {name}...")
@@ -27,6 +32,8 @@ class CSPMAPITester:
                 response = requests.get(url, headers=headers, timeout=30)
             elif method == 'POST':
                 response = requests.post(url, json=data, headers=headers, timeout=30)
+            elif method == 'PUT':
+                response = requests.put(url, json=data, headers=headers, timeout=30)
 
             success = response.status_code == expected_status
             if success:
@@ -98,10 +105,10 @@ class CSPMAPITester:
         rules = data["rules"]
         if not isinstance(rules, list):
             return "Rules is not a list"
-        if len(rules) != 22:
-            return f"Expected 22 rules, got {len(rules)}"
-        if data["total"] != 22:
-            return f"Total field should be 22, got {data['total']}"
+        if len(rules) != 27:
+            return f"Expected 27 rules, got {len(rules)}"
+        if data["total"] != 27:
+            return f"Total field should be 27, got {data['total']}"
         
         # Validate rule structure
         required_fields = ["check_id", "title", "service", "default_severity", "cis_reference", "remediation"]
@@ -165,7 +172,206 @@ class CSPMAPITester:
         
         return True
 
+    def login_user(self, username, password):
+        """Login and store token for user"""
+        success, data = self.run_test(
+            f"Login {username}",
+            "POST",
+            "auth/login",
+            200,
+            data={"username": username, "password": password}
+        )
+        if success and "access_token" in data:
+            self.tokens[username] = data["access_token"]
+            return True
+        return False
+
+    def validate_posture_trend_response(self, data):
+        """Validate posture trend API response"""
+        if "trend" not in data:
+            return "Missing 'trend' field"
+        if "total_scans" not in data:
+            return "Missing 'total_scans' field"
+        
+        trend = data["trend"]
+        if not isinstance(trend, list):
+            return "Trend is not a list"
+        
+        if not isinstance(data["total_scans"], int):
+            return "total_scans is not an integer"
+        
+        # If trend has data, validate structure
+        if trend:
+            for item in trend[:2]:  # Check first 2 items
+                required_fields = ["avg_risk_score", "total_findings", "findings_by_severity", "timestamp"]
+                for field in required_fields:
+                    if field not in item:
+                        return f"Trend item missing required field: {field}"
+        
+        return True
+
+    def validate_scheduler_status_response(self, data):
+        """Validate scheduler status API response"""
+        required_fields = ["enabled", "cron", "region", "scheduler_running"]
+        for field in required_fields:
+            if field not in data:
+                return f"Missing required field: {field}"
+        
+        if not isinstance(data["enabled"], bool):
+            return "enabled is not a boolean"
+        
+        if not isinstance(data["cron"], str):
+            return "cron is not a string"
+        
+        if not isinstance(data["region"], str):
+            return "region is not a string"
+        
+        return True
+
+    def validate_email_status_response(self, data):
+        """Validate email status API response"""
+        required_fields = ["configured", "smtp_host", "alert_email"]
+        for field in required_fields:
+            if field not in data:
+                return f"Missing required field: {field}"
+        
+        if not isinstance(data["configured"], bool):
+            return "configured is not a boolean"
+        
+        return True
+
     def test_root_api(self):
+        """Test GET /api/"""
+        return self.run_test(
+            "Root API endpoint",
+            "GET",
+            "",
+            200,
+            validate_func=self.validate_root_response
+        )
+
+    def test_regions_api(self):
+        """Test GET /api/regions"""
+        return self.run_test(
+            "Regions API endpoint",
+            "GET",
+            "regions",
+            200,
+            validate_func=self.validate_regions_response
+        )
+
+    def test_rules_api(self):
+        """Test GET /api/rules"""
+        return self.run_test(
+            "Rules API endpoint",
+            "GET",
+            "rules",
+            200,
+            validate_func=self.validate_rules_response
+        )
+
+    def test_posture_trend_api(self):
+        """Test GET /api/posture/trend (PUBLIC endpoint)"""
+        return self.run_test(
+            "Posture Trend API endpoint (PUBLIC)",
+            "GET",
+            "posture/trend",
+            200,
+            validate_func=self.validate_posture_trend_response
+        )
+
+    def test_scheduler_status_admin(self):
+        """Test GET /api/scheduler/status (admin role)"""
+        if "admin" not in self.tokens:
+            print("❌ Admin token not available")
+            return False, {}
+        
+        return self.run_test(
+            "Scheduler Status API (admin)",
+            "GET",
+            "scheduler/status",
+            200,
+            token=self.tokens["admin"],
+            validate_func=self.validate_scheduler_status_response
+        )
+
+    def test_scheduler_status_viewer_403(self):
+        """Test GET /api/scheduler/status with viewer role (should get 403)"""
+        if "viewer" not in self.tokens:
+            print("❌ Viewer token not available")
+            return False, {}
+        
+        return self.run_test(
+            "Scheduler Status API (viewer - should be 403)",
+            "GET",
+            "scheduler/status",
+            403,
+            token=self.tokens["viewer"]
+        )
+
+    def test_scheduler_config_update_admin(self):
+        """Test PUT /api/scheduler/config (admin role)"""
+        if "admin" not in self.tokens:
+            print("❌ Admin token not available")
+            return False, {}
+        
+        config_data = {
+            "enabled": False,
+            "cron": "0 0 * * *",
+            "region": "us-east-1"
+        }
+        
+        return self.run_test(
+            "Scheduler Config Update API (admin)",
+            "PUT",
+            "scheduler/config",
+            200,
+            data=config_data,
+            token=self.tokens["admin"]
+        )
+
+    def test_scheduler_run_now_analyst(self):
+        """Test POST /api/scheduler/run-now (analyst role)"""
+        if "analyst" not in self.tokens:
+            print("❌ Analyst token not available")
+            return False, {}
+        
+        return self.run_test(
+            "Scheduler Run Now API (analyst)",
+            "POST",
+            "scheduler/run-now",
+            200,
+            token=self.tokens["analyst"]
+        )
+
+    def test_scheduler_run_now_viewer_403(self):
+        """Test POST /api/scheduler/run-now with viewer role (should get 403)"""
+        if "viewer" not in self.tokens:
+            print("❌ Viewer token not available")
+            return False, {}
+        
+        return self.run_test(
+            "Scheduler Run Now API (viewer - should be 403)",
+            "POST",
+            "scheduler/run-now",
+            403,
+            token=self.tokens["viewer"]
+        )
+
+    def test_email_status_admin(self):
+        """Test GET /api/notifications/email-status (admin role)"""
+        if "admin" not in self.tokens:
+            print("❌ Admin token not available")
+            return False, {}
+        
+        return self.run_test(
+            "Email Status API (admin)",
+            "GET",
+            "notifications/email-status",
+            200,
+            token=self.tokens["admin"],
+            validate_func=self.validate_email_status_response
+        )
         """Test GET /api/"""
         return self.run_test(
             "Root API endpoint",
@@ -197,12 +403,17 @@ class CSPMAPITester:
 
     def test_scan_api(self):
         """Test POST /api/scan"""
+        if "analyst" not in self.tokens:
+            print("❌ Analyst token not available")
+            return False, {}
+            
         success, data = self.run_test(
             "Scan API endpoint",
             "POST",
             "scan",
             200,
             data={"region": "us-east-1"},
+            token=self.tokens["analyst"],
             validate_func=self.validate_scan_response
         )
         if success:
@@ -211,30 +422,45 @@ class CSPMAPITester:
 
     def test_scan_results_api(self):
         """Test GET /api/scan/results"""
+        if "viewer" not in self.tokens:
+            print("❌ Viewer token not available")
+            return False, {}
+            
         return self.run_test(
             "Scan Results API endpoint",
             "GET",
             "scan/results",
             200,
+            token=self.tokens["viewer"],
             validate_func=self.validate_scan_response
         )
 
     def test_export_json_api(self):
         """Test GET /api/scan/export/json"""
+        if "analyst" not in self.tokens:
+            print("❌ Analyst token not available")
+            return False, {}
+            
         return self.run_test(
             "Export JSON API endpoint",
             "GET",
             "scan/export/json",
-            200
+            200,
+            token=self.tokens["analyst"]
         )
 
     def test_export_csv_api(self):
         """Test GET /api/scan/export/csv"""
+        if "analyst" not in self.tokens:
+            print("❌ Analyst token not available")
+            return False, {}
+            
         return self.run_test(
             "Export CSV API endpoint",
             "GET",
             "scan/export/csv",
-            200
+            200,
+            token=self.tokens["analyst"]
         )
 
 def main():
@@ -243,11 +469,35 @@ def main():
     
     tester = CSPMAPITester()
     
+    # First, login all users to get tokens
+    print("\n🔐 Logging in test users...")
+    credentials = [
+        ("admin", "Admin@123"),
+        ("analyst", "Analyst@123"),
+        ("viewer", "Viewer@123")
+    ]
+    
+    for username, password in credentials:
+        if not tester.login_user(username, password):
+            print(f"❌ Failed to login {username}")
+    
     # Test all endpoints in order
     test_methods = [
+        # Original tests
         tester.test_root_api,
         tester.test_regions_api,
         tester.test_rules_api,
+        
+        # New feature tests
+        tester.test_posture_trend_api,  # PUBLIC endpoint
+        tester.test_scheduler_status_admin,  # Admin only
+        tester.test_scheduler_status_viewer_403,  # Should fail with 403
+        tester.test_scheduler_config_update_admin,  # Admin only
+        tester.test_scheduler_run_now_analyst,  # Analyst role
+        tester.test_scheduler_run_now_viewer_403,  # Should fail with 403
+        tester.test_email_status_admin,  # Admin only
+        
+        # Original scan tests (require auth)
         tester.test_scan_api,
         tester.test_scan_results_api,
         tester.test_export_json_api,

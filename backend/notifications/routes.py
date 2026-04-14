@@ -60,6 +60,16 @@ async def update_notification_settings(settings: NotificationSettings, user: dic
     return {"message": "Settings updated"}
 
 
+@router.get("/email-status")
+async def get_email_status(user: dict = Depends(require_role("admin"))):
+    from notifications.notifier import email_notifier
+    return {
+        "configured": email_notifier.is_configured,
+        "smtp_host": email_notifier.smtp_host or "Not configured",
+        "alert_email": email_notifier.alert_email or "Not configured",
+    }
+
+
 async def create_scan_notifications(db_ref, scan_result):
     """Called after a scan to generate notifications."""
     now = datetime.now(timezone.utc).isoformat()

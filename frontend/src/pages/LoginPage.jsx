@@ -1,7 +1,103 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { ShieldCheck, User, Lock, Eye, EyeSlash, CircleNotch } from "@phosphor-icons/react";
+import { api } from "@/services/api";
+import { ShieldCheck, User, Lock, Eye, EyeSlash, CircleNotch, TrendDown, TrendUp, Minus } from "@phosphor-icons/react";
+import { LineChart, Line, ResponsiveContainer, Tooltip, YAxis } from "recharts";
+
+function PostureTrendWidget() {
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    api.getPostureTrend()
+      .then((res) => setData(res.data))
+      .catch(() => {});
+  }, []);
+
+  if (!data || !data.trend || data.trend.length === 0) return null;
+
+  const trend = data.trend;
+  const latest = trend[trend.length - 1];
+  const previous = trend.length >= 2 ? trend[trend.length - 2] : null;
+  const latestScore = latest?.avg_risk_score || 0;
+  const prevScore = previous?.avg_risk_score || latestScore;
+  const delta = parseFloat((latestScore - prevScore).toFixed(1));
+  const posture = 10 - latestScore; // Invert: lower risk = higher posture
+  const postureScore = Math.max(0, Math.min(100, Math.round(posture * 10)));
+
+  const gaugeColor = postureScore >= 70 ? "#34C759" : postureScore >= 40 ? "#FFCC00" : "#FF3B30";
+  const trendDirection = delta < 0 ? "improving" : delta > 0 ? "degrading" : "stable";
+
+  const chartData = trend.map((t) => ({
+    score: 10 - (t.avg_risk_score || 0),
+    label: t.timestamp ? new Date(t.timestamp).toLocaleDateString() : "",
+  }));
+
+  return (
+    <div className="bg-[#0A0A0A] border border-[#222222] rounded-sm p-5 mt-6" data-testid="posture-widget">
+      <div className="flex items-center justify-between mb-3">
+        <span className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-[0.2em] text-[#71717A]">
+          Security Posture
+        </span>
+        <span className="font-['JetBrains_Mono'] text-[10px] text-[#71717A]">
+          {data.total_scans} scan{data.total_scans !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      <div className="flex items-end gap-4">
+        {/* Score */}
+        <div className="flex-shrink-0">
+          <div className="flex items-baseline gap-1">
+            <span className="font-['Chivo'] text-3xl font-black" style={{ color: gaugeColor }}>
+              {postureScore}
+            </span>
+            <span className="font-['JetBrains_Mono'] text-xs text-[#71717A]">/100</span>
+          </div>
+          <div className="flex items-center gap-1 mt-1">
+            {trendDirection === "improving" ? (
+              <TrendUp size={12} className="text-[#34C759]" />
+            ) : trendDirection === "degrading" ? (
+              <TrendDown size={12} className="text-[#FF3B30]" />
+            ) : (
+              <Minus size={12} className="text-[#71717A]" />
+            )}
+            <span className={`font-['JetBrains_Mono'] text-[10px] ${
+              trendDirection === "improving" ? "text-[#34C759]" : trendDirection === "degrading" ? "text-[#FF3B30]" : "text-[#71717A]"
+            }`}>
+              {trendDirection === "improving" ? `+${Math.abs(delta)} improved` : trendDirection === "degrading" ? `-${delta} risk increase` : "Stable"}
+            </span>
+          </div>
+        </div>
+
+        {/* Sparkline */}
+        {chartData.length >= 2 && (
+          <div className="flex-1 h-12">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={chartData}>
+                <YAxis domain={["dataMin - 1", "dataMax + 1"]} hide />
+                <Tooltip
+                  contentStyle={{ background: "#0A0A0A", border: "1px solid #222222", borderRadius: "2px", fontFamily: "JetBrains Mono", fontSize: 10, color: "#fff" }}
+                  formatter={(val) => [`${Math.round(val * 10)}/100`, "Posture"]}
+                />
+                <Line type="monotone" dataKey="score" stroke={gaugeColor} strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      {/* Posture bar */}
+      <div className="mt-3">
+        <div className="w-full h-1.5 bg-[#222222] rounded-full overflow-hidden">
+          <div
+            className="h-full rounded-full transition-[width] duration-500"
+            style={{ width: `${postureScore}%`, backgroundColor: gaugeColor }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -109,6 +205,9 @@ export default function LoginPage() {
             </p>
           </div>
         </div>
+
+        {/* Security Posture Trend Widget */}
+        <PostureTrendWidget />
 
         <p className="text-[#71717A] text-xs text-center mt-6">UPES Dehradun | IBM Industry Project</p>
       </div>

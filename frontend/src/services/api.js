@@ -53,4 +53,15 @@ export const api = {
   getNotifications: () => axiosAuth.get("/notifications"),
   markNotificationsRead: () => axiosAuth.post("/notifications/mark-read"),
   getUnreadCount: () => axiosAuth.get("/notifications/unread-count"),
+  getNotificationSettings: () => axiosAuth.get("/notifications/settings"),
+  updateNotificationSettings: (data) => axiosAuth.put("/notifications/settings", data),
+  getEmailStatus: () => axiosAuth.get("/notifications/email-status"),
+
+  // Scheduler
+  getSchedulerStatus: () => axiosAuth.get("/scheduler/status"),
+  updateSchedulerConfig: (data) => axiosAuth.put("/scheduler/config", data),
+  runSchedulerNow: () => axiosAuth.post("/scheduler/run-now"),
+
+  // Posture (public - no auth)
+  getPostureTrend: () => axios.get(`${API}/posture/trend`),
 };

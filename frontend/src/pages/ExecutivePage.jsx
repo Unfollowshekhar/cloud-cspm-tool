@@ -13,7 +13,11 @@ export default function ExecutivePage() {
   const [results, setResults] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { token } = useAuth();
+  const [scheduler, setScheduler] = useState(null);
+  const [schedEnabled, setSchedEnabled] = useState(false);
+  const [schedCron, setSchedCron] = useState("0 0 * * *");
+  const [schedRegion, setSchedRegion] = useState("us-east-1");
+  const { token, hasRole } = useAuth();
 
   useEffect(() => {
     Promise.all([api.getScanResults(), api.getScanHistory()])
@@ -23,7 +27,19 @@ export default function ExecutivePage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+
+    // Load scheduler status for admin
+    if (hasRole("admin")) {
+      api.getSchedulerStatus()
+        .then((res) => {
+          setScheduler(res.data);
+          setSchedEnabled(res.data.enabled || false);
+          setSchedCron(res.data.cron || "0 0 * * *");
+          setSchedRegion(res.data.region || "us-east-1");
+        })
+        .catch(() => {});
+    }
+  }, [hasRole]);
 
   if (loading) {
     return (
@@ -202,6 +218,87 @@ export default function ExecutivePage() {
           </tbody>
         </table>
       </div>
+
+      {/* Scheduler Settings (Admin only) */}
+      {hasRole("admin") && (
+        <div className="bg-[#0A0A0A] border border-[#222222] rounded-sm p-6 mt-8" data-testid="scheduler-card">
+          <h3 className="font-['Chivo'] text-lg font-bold mb-4">Scan Scheduler</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
+            <div>
+              <label className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-wider text-[#71717A] mb-1.5 block">Status</label>
+              <button
+                data-testid="scheduler-toggle"
+                onClick={async () => {
+                  const newEnabled = !schedEnabled;
+                  setSchedEnabled(newEnabled);
+                  const res = await api.updateSchedulerConfig({ enabled: newEnabled, cron: schedCron, region: schedRegion });
+                  setScheduler(res.data);
+                }}
+                className={`w-full rounded-sm px-4 py-2 text-sm font-['JetBrains_Mono'] border transition-colors duration-150 ${
+                  schedEnabled
+                    ? "bg-[#34C759]/10 text-[#34C759] border-[#34C759]/20"
+                    : "bg-[#222222] text-[#71717A] border-[#222222]"
+                }`}
+              >
+                {schedEnabled ? "Enabled" : "Disabled"}
+              </button>
+            </div>
+            <div>
+              <label className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-wider text-[#71717A] mb-1.5 block">Cron Schedule</label>
+              <select
+                data-testid="scheduler-cron"
+                value={schedCron}
+                onChange={(e) => setSchedCron(e.target.value)}
+                className="w-full bg-[#050505] border border-[#222222] rounded-sm px-3 py-2 text-sm text-white font-['JetBrains_Mono'] appearance-none focus:border-[#444444] transition-colors duration-150"
+              >
+                <option value="0 0 * * *">Daily at midnight</option>
+                <option value="0 */6 * * *">Every 6 hours</option>
+                <option value="0 */12 * * *">Every 12 hours</option>
+                <option value="0 8 * * 1">Weekly (Mon 8AM)</option>
+                <option value="*/30 * * * *">Every 30 minutes</option>
+              </select>
+            </div>
+            <div>
+              <label className="font-['JetBrains_Mono'] text-[10px] uppercase tracking-wider text-[#71717A] mb-1.5 block">Region</label>
+              <select
+                data-testid="scheduler-region"
+                value={schedRegion}
+                onChange={(e) => setSchedRegion(e.target.value)}
+                className="w-full bg-[#050505] border border-[#222222] rounded-sm px-3 py-2 text-sm text-white font-['JetBrains_Mono'] appearance-none focus:border-[#444444] transition-colors duration-150"
+              >
+                <option value="us-east-1">us-east-1</option>
+                <option value="us-west-2">us-west-2</option>
+                <option value="eu-west-1">eu-west-1</option>
+                <option value="ap-southeast-1">ap-southeast-1</option>
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <button
+                data-testid="scheduler-save"
+                onClick={async () => {
+                  const res = await api.updateSchedulerConfig({ enabled: schedEnabled, cron: schedCron, region: schedRegion });
+                  setScheduler(res.data);
+                }}
+                className="flex-1 bg-white text-black font-semibold rounded-sm py-2 hover:bg-gray-200 transition-colors duration-150 text-sm"
+              >
+                Save
+              </button>
+              <button
+                data-testid="scheduler-run-now"
+                onClick={() => api.runSchedulerNow()}
+                className="flex-1 bg-transparent border border-[#222222] text-white rounded-sm py-2 hover:bg-[#141414] transition-colors duration-150 text-sm"
+              >
+                Run Now
+              </button>
+            </div>
+          </div>
+          {scheduler?.next_run && (
+            <p className="font-['JetBrains_Mono'] text-xs text-[#71717A] mt-3">
+              Next scheduled scan: {new Date(scheduler.next_run).toLocaleString()}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
