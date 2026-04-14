@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from datetime import datetime, timezone
 from models.finding import Finding
-from scoring.basic_scorer import BasicScorer
+from scoring.weighted_scorer import WeightedRiskScorer
 
 
 RULES_PATH = Path(__file__).parent.parent / "data" / "rules.json"
@@ -75,6 +75,20 @@ DEMO_RESOURCES = {
         "CT-003": ["arn:aws:cloudtrail:us-east-1:123456789012:trail/production-trail"],
         "CT-004": ["arn:aws:cloudtrail:us-east-1:123456789012:trail/production-trail"],
     },
+    "KMS": {
+        "KMS-001": [
+            "arn:aws:kms:us-east-1:123456789012:key/a1b2c3d4-5678-90ab-cdef-111111111111",
+            "arn:aws:kms:us-east-1:123456789012:key/a1b2c3d4-5678-90ab-cdef-222222222222",
+        ],
+        "KMS-002": [
+            "arn:aws:kms:us-east-1:123456789012:key/a1b2c3d4-5678-90ab-cdef-333333333333",
+        ],
+    },
+    "VPC": {
+        "VPC-001": ["vpc-0abc123def456789a", "vpc-0def456789abc123b"],
+        "VPC-002": ["vpc-default-us-east-1"],
+        "VPC-003": ["acl-0abc123def456789a"],
+    },
 }
 
 # Detailed descriptions for demo findings
@@ -101,6 +115,11 @@ DEMO_DESCRIPTIONS = {
     "CT-002": "CloudTrail trail '{}' has logging turned off. No events are being recorded.",
     "CT-003": "CloudTrail trail '{}' does not have log file validation enabled. Log integrity cannot be verified.",
     "CT-004": "CloudTrail trail '{}' is not configured to deliver logs to S3 with KMS encryption.",
+    "KMS-001": "KMS key '{}' does not have automatic key rotation enabled. Keys should be rotated annually.",
+    "KMS-002": "KMS key '{}' is scheduled for deletion. Verify no resources depend on this key before deletion completes.",
+    "VPC-001": "VPC '{}' does not have Flow Logs enabled. Network traffic is not being monitored.",
+    "VPC-002": "Default VPC '{}' is in use. Default VPCs have permissive default configurations.",
+    "VPC-003": "Network ACL '{}' has rules allowing unrestricted ingress on all ports from 0.0.0.0/0.",
 }
 
 
@@ -113,7 +132,7 @@ def load_rules() -> dict:
 def generate_demo_findings(region: str = "us-east-1") -> list[Finding]:
     rules = load_rules()
     findings = []
-    scorer = BasicScorer()
+    scorer = WeightedRiskScorer()
 
     for check_id, rule in rules.items():
         service = rule["service"]
@@ -143,7 +162,7 @@ def generate_demo_findings(region: str = "us-east-1") -> list[Finding]:
                 resource_id=resource_id,
                 region=region if service != "IAM" else "global",
                 severity=rule["default_severity"],
-                risk_score=scorer.score(rule["default_severity"]),
+                risk_score=scorer.score(Finding(service=service, check_id=check_id, title="", description="", resource_id="", region="", severity=rule["default_severity"], remediation="", cis_reference=""), rule),
                 remediation=rule["remediation"],
                 cis_reference=rule["cis_reference"],
             )
